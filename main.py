@@ -50,8 +50,9 @@ def open_image():
         rotate_left_button.configure(command=lambda: rotate_left())  # Przypisz funkcję rotate_left jako obsługę przycisku
         # Progowanie
         threshold_button.configure(state=tk.NORMAL)  # Włącz przycisk przetwarzania
-        threshold_button.configure(command=lambda: threshold_image(global_image, number_slider.get()))  # Przypisz funkcję threshold_image jako obsługę przycisku
+        threshold_button.configure(command=lambda: threshold_image(global_image, number_slider.get()))
         distance_button.configure(command=lambda: sharpen_edges(global_image))
+        edge_button.configure(command=lambda: find_and_draw_edges(global_image))
 
 def rotate_left():
     global global_image, canvas
@@ -115,7 +116,7 @@ def threshold_image(img, threshold):
 
         # Progowanie obrazu na podstawie wybranego progu
         thresholded_image = cv2.threshold(gray_image, threshold, 255, cv2.ADAPTIVE_THRESH_MEAN_C)[1]
-        global_image=thresholded_image
+        #global_image=thresholded_image
         # Progowanie
         #_, thresholded_image = cv2.threshold(gray_image, average_brightness, 255, cv2.THRESH_BINARY)
         #_, thresholded_image = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -124,7 +125,7 @@ def threshold_image(img, threshold):
         segmented_image = np.zeros_like(thresholded_image)
 
         edges = cv2.Canny(gray_image, 100, 200)
-
+        global_image=thresholded_image
         # Przekształć obraz na format obsługiwany przez Tkinter i Canvas
         img_pil = Image.fromarray(thresholded_image)
         img_tk = ImageTk.PhotoImage(img_pil)
@@ -132,6 +133,76 @@ def threshold_image(img, threshold):
         # Wyświetl obraz na płótnie
         canvas.create_image(0, 0, anchor="nw", image=img_tk)
         canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
+
+        return thresholded_image
+
+def update_binary_image(value):
+    global global_image, canvas
+    threshold_value = int(value)  # Pobierz wartość suwaka i przekształć ją na liczbę całkowitą
+    _, thresholded_image = cv2.threshold(global_image, threshold_value, 255, cv2.THRESH_BINARY)
+    # Konwertuj obrazy do formatu obsługiwanego przez Tkinter
+    img_pil = Image.fromarray(thresholded_image)
+    img_tk = ImageTk.PhotoImage(img_pil)
+    # Wyświetl obrazy na płótnie
+    canvas.create_image(0, 0, anchor="nw", image=img_tk)
+    canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
+
+def find_and_draw_edges(edges_image):
+    global global_image, canvas
+    # Znajdź kontury na obrazie krawędzi
+    contours, _ = cv2.findContours(edges_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    print(contours)
+    # Narysuj kontury na oryginalnym obrazie
+    edges_drawn = edges_image.copy()
+    edge_img = cv2.cvtColor(edges_drawn, cv2.COLOR_BGR2RGB)
+    edge_img=cv2.drawContours(edge_img, contours, -1, (255, 0, 0), 2)
+
+    # Przekształć obraz na format obsługiwany przez Tkinter i Canvas
+    img_pil = Image.fromarray(edge_img)
+    img_tk = ImageTk.PhotoImage(img_pil)
+
+    # Wyświetl obraz na płótnie
+    canvas.create_image(0, 0, anchor="nw", image=img_tk)
+    canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
+
+    return edges_drawn
+
+def detect_oval_edges(img):
+    # Przekształć obraz na odcienie szarości
+    if len(img.shape) > 2:
+        gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    else:
+        gray_image = img
+
+    # Wykryj krawędzie za pomocą operatora Sobela (możesz użyć wcześniej wyostrzonego obrazu)
+    edges = cv2.Canny(gray_image, 50, 150)
+
+    # Zastosuj morfologiczną operację otwarcia, aby pozbyć się drobnych zakłóceń
+    kernel = np.ones((5, 5), np.uint8)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_OPEN, kernel)
+
+    # Wykryj okręgi za pomocą transformacji Hougha
+    circles = cv2.HoughCircles(edges, cv2.HOUGH_GRADIENT, dp=1, minDist=20, param1=50, param2=30, minRadius=5, maxRadius=50)
+
+    # Rysuj znalezione okręgi na obrazie oryginalnym
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        for i in circles[0, :]:
+            cv2.circle(img, (i[0], i[1]), i[2], (0, 255, 0), 2)  # Rysuj okrąg
+            cv2.circle(img, (i[0], i[1]), 2, (0, 0, 255), 3)  # Rysuj środek okręgu
+
+    global_image=img
+    # Przekształć obraz na format obsługiwany przez Tkinter i Canvas
+    img_pil = Image.fromarray(img)
+    img_tk = ImageTk.PhotoImage(img_pil)
+
+    # Wyświetl obraz na płótnie
+    canvas.create_image(0, 0, anchor="nw", image=img_tk)
+    canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
+
+    return img
+
 
 def sharpen_edges(image):
     global global_image  # Użyj zmiennej globalnej, aby uzyskać dostęp do obrazu
@@ -178,35 +249,38 @@ ctk.set_appearance_mode("dark")
 left_frame = ctk.CTkFrame(window)
 left_frame.pack(side="left", expand=True, padx=20, pady=20)
 
+# Przycisk "wczytaj inne zdjęcie"
+load_button = ctk.CTkButton(left_frame, text="Wczytaj zdjęcie", command=open_image)
+load_button.grid(row=0, column=0, columnspan=2, pady=10)
+
 # Przyciski "obróć w lewo" i "obróć w prawo"
 rotate_left_button = ctk.CTkButton(left_frame, text="Obróć w lewo", command=rotate_left)
-rotate_left_button.grid(row=0, column=0, padx=10, pady=10)
+rotate_left_button.grid(row=1, column=0, padx=10, pady=10)
 
 rotate_right_button = ctk.CTkButton(left_frame, text="Obróć w prawo", command=rotate_right)
-rotate_right_button.grid(row=0, column=1, padx=10, pady=10)
-
-# Suwak
-slider_label = ctk.CTkLabel(left_frame, text="Suwak")
-slider_label.grid(row=1, column=0, padx=10, pady=10)
-number_slider = ctk.CTkSlider(left_frame, from_=0, to=255)
-number_slider.grid(row=1, column=1, padx=10, pady=10)
-
-# Przycisk "binaryzuj"
-threshold_button = ctk.CTkButton(left_frame, text="Binaryzuj")
-threshold_button.grid(row=2, column=0, columnspan=2, pady=10)
+rotate_right_button.grid(row=1, column=1, padx=10, pady=10)
 
 # Przycisk "Wyostrz krawędzie"
 distance_button = ctk.CTkButton(left_frame, text="Wyostrz krawędzie")
-distance_button.grid(row=3, column=0, columnspan=2, pady=10)
+distance_button.grid(row=2, column=0, columnspan=2, pady=10)
 
-# Przycisk "wczytaj inne zdjęcie"
-load_button = ctk.CTkButton(left_frame, text="Wczytaj zdjęcie", command=open_image)
-load_button.grid(row=4, column=0, columnspan=2, pady=10)
+# Przycisk "Detekcja krawędzi"
+edge_button = ctk.CTkButton(left_frame, text="Znajdż krawędzie")
+edge_button.grid(row=3, column=0, columnspan=2, pady=10)
+
+# Suwak
+slider_label = ctk.CTkLabel(left_frame, text="Próg binaryzacji")
+slider_label.grid(row=4, column=0, padx=10, pady=10)
+number_slider = ctk.CTkSlider(left_frame, from_=0, to=255, command=lambda value: update_binary_image(value))
+number_slider.grid(row=4, column=1, padx=10, pady=10)
+
+# Przycisk "binaryzuj"
+threshold_button = ctk.CTkButton(left_frame, text="Binaryzuj")
+threshold_button.grid(row=5, column=0, columnspan=2, pady=10)
 
 # Prawy panel
 right_frame = ctk.CTkFrame(window)
 right_frame.pack(side="left")
-
 
 # Obraz
 canvas = ctk.CTkCanvas(right_frame)

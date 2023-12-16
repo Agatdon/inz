@@ -2,20 +2,22 @@ import tkinter as tk
 from tkinter import *
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 import customtkinter as ctk
 from tkinter import filedialog
 from PIL import Image, ImageTk, ImageOps  # Do obsługi obrazów
-
-import cv2
 from PIL import Image
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 # Zmienna globalna przechowująca obraz
 global_image = None
-
+global_data = []
 
 def open_image():
-    global global_image, canvas, threshold_button, number_slider
+    global global_image, canvas, threshold_button, number_slider, global_data
+    global_data = []
 
     file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg *.gif *.bmp *.ppm *.pgm *.tif *.tiff")])
     if file_path:
@@ -53,6 +55,13 @@ def open_image():
         threshold_button.configure(command=lambda: threshold_image(global_image, number_slider.get()))
         distance_button.configure(command=lambda: sharpen_edges(global_image))
         edge_button.configure(command=lambda: find_and_draw_edges(global_image))
+        # Ustawienia narzędziowe
+        points_list = [[]]  # Rozpocznij z jedną pustą listą punktów
+        distances_list = []
+        start_button.configure(command=lambda: start_measurement(save_button, canvas, points_list))
+        save_button.configure(command=lambda: save_distances(points_list, distances_list))
+        # Dodaj zdarzenie myszy
+        canvas.bind("<Button-1>", lambda event: on_click(event, canvas, points_list[-1]))
 
 def rotate_left():
     global global_image, canvas
@@ -241,6 +250,95 @@ def sharpen_edges(image):
 
     return sharpened_image
 
+def on_click(event, canvas, points):
+    # Dodaj punkt do listy
+    points.append((event.x, event.y))
+
+    # Rysuj punkt na Canvas
+    canvas.create_oval(event.x - 2, event.y - 2, event.x + 2, event.y + 2, fill="red")
+
+    # Połącz punkty linią
+    if len(points) > 1:
+        last_point = points[-2]
+        line_id = canvas.create_line(last_point[0], last_point[1], event.x, event.y, fill="blue")
+
+
+def start_measurement(save_button, canvas, points_list):
+    # Odblokuj przycisk zapisu
+    save_button['state'] = 'normal'
+
+    # Rozpocznij nowy pomiar - utwórz nową listę punktów
+    points_list.append([])
+
+
+def save_distances(points_list, distances_list):
+    global global_data
+    if len(points_list[-1]) > 1:
+        y0 = points_list[-1][0][1]  # Pierwszy punkt jako punkt odniesienia po y
+        print("Points are:", points_list)
+        distances_list.append([point[1] - y0 for point in points_list[-1]])
+
+        print("Distances from y0:", distances_list[-1])
+    global_data.append((len(global_data), distances_list[-1]))
+    # Wyświetl aktualną globalną listę
+    print("Global Data:", global_data)
+
+def calculate_mass():
+    # Pobierz tekst z pola tekstowego
+    dna_sequence = entry.get()
+
+    # Convert dna_sequence to integer
+    path_number = int(dna_sequence)
+
+    # Sciezka markera
+    marker = [19, 25, 34, 49, 85, 119]
+
+    # Tutaj dodaj kod do obliczenia masy ścieżki (przetłumaczenie, obliczenia masy itp.)
+
+    # Znajdź dane dla ścieżki 0 (referencyjnej)
+    reference_data = None
+    for data_point in global_data:
+        if data_point[0] == 0:
+            reference_data = data_point
+            break
+
+    if reference_data is not None:
+        reference_distances = reference_data[1]
+
+        # Avoid division by zero
+        if reference_distances[1] != 0:
+            distances = reference_distances[1:]
+            log_marker = [np.log(_marker) for _marker in marker]
+
+            # Oblicz regresję liniową
+            slope, intercept = np.polyfit(np.abs(distances), log_marker, 1)
+
+            # Oblicz masę dla punktów na wybranej ścieżce
+            selected_data = None
+            for data_point in global_data:
+                if data_point[0] == path_number:
+                    selected_data = data_point
+                    break
+
+            if selected_data is not None:
+                selected_distances = selected_data[1][1:]
+                masses = slope * np.abs(selected_distances) + intercept
+                masses = np.exp(masses)
+
+                # Wyświetl masę dla każdego punktu
+                for distance, mass in zip(selected_distances, masses):
+                    print(f'Dystans: {distance}, Obliczona masa: {mass}')
+
+            else:
+                print(f"Nie można znaleźć danych dla ścieżki {path_number}.")
+
+        else:
+            # Handle the case when reference_distances[0] is zero
+            print("Cannot calculate Rf values. Distance at index 0 is zero.")
+
+    else:
+        print("Nie można znaleźć danych dla ścieżki referencyjnej.")
+
 window = ctk.CTk()
 window.title("Narzędzie do analizy")
 ctk.set_appearance_mode("dark")
@@ -277,6 +375,32 @@ number_slider.grid(row=4, column=1, padx=10, pady=10)
 # Przycisk "binaryzuj"
 threshold_button = ctk.CTkButton(left_frame, text="Binaryzuj")
 threshold_button.grid(row=5, column=0, columnspan=2, pady=10)
+
+# tekst
+messagebox = ctk.CTkLabel(left_frame, text="Na początku zaznacz 6 punktów na ścieżce kalibracyjnej")
+messagebox.grid(row=6, column=0, columnspan=2, pady=10)
+
+# Dodaj przycisk do rozpoczęcia zaznaczania odległości
+start_button = ctk.CTkButton(left_frame, text="Start Measurement")
+start_button.grid(row=7, column=0, padx=10, pady=10)
+
+# Dodaj przycisk do zapisywania odległości
+save_button = ctk.CTkButton(left_frame, text="Save Distances")
+save_button.grid(row=7, column=1, padx=10, pady=10)
+save_button['state'] = 'disabled'  # Zablokuj przycisk zapisu na początku
+
+# Utwórz przycisk do obliczania masy
+calculate_button = ctk.CTkButton(left_frame, text="Oblicz masę ścieżki", command=calculate_mass,
+                                 width=180)
+calculate_button.grid(row=8, column=0, columnspan=2, pady=10)
+
+# Utwórz pole tekstowe do wprowadzania danych
+entry = ctk.CTkEntry(calculate_button,width=30, height=25)
+entry.place(relx=1.0, rely=0.0, anchor='ne')
+
+# Utwórz etykietę wynikową
+result_label = ctk.CTkLabel(left_frame, text="Masa ścieżki: 0 g")
+result_label.grid(row=9, column=0, columnspan=2, pady=10)
 
 # Prawy panel
 right_frame = ctk.CTkFrame(window)

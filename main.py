@@ -26,6 +26,7 @@ def open_image():
         img_cv2 = cv2.cvtColor(np.array(img_pillow), cv2.COLOR_RGB2BGR)
         # Przekształć obraz na odcienie szarości
         gray_image = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2GRAY)
+        gray_image = cv2.convertScaleAbs(gray_image, alpha=1.2, beta=10)
         global_image = gray_image
         # Wyświetl obraz na płótnie
         widthx, heighty = gray_image.shape[1], gray_image.shape[0]
@@ -50,15 +51,15 @@ def open_image():
         rotate_left_button.configure(state=tk.NORMAL)  # Włącz przycisk "Obróć w lewo"
         rotate_left_button.configure(command=lambda: rotate_left())  # Przypisz funkcję rotate_left jako obsługę przycisku
         # Progowanie
-        threshold_button.configure(command=lambda: threshold_image(global_image, number_slider.get()))
-        distance_button.configure(command=lambda: sharpen_edges(global_image))
-        edge_button.configure(command=lambda: find_and_draw_edges(global_image))
+        threshold_button.configure(command=lambda: threshold_image(number_slider.get()))
+        distance_button.configure(command=lambda: sharpen_edges())
+        edge_button.configure(command=lambda: find_and_draw_edges())
         # Ustawienia narzędziowe
         points_list = [[]]  # Rozpocznij z jedną pustą listą punktów
         distances_list = []
         start_button.configure(command=lambda: start_measurement(save_button, canvas, points_list))
         save_button.configure(command=lambda: save_distances(points_list, distances_list))
-        filter_button.configure(command=lambda :filtered(global_image))
+        filter_button.configure(command=lambda :filtered())
         # Dodaj zdarzenie myszy
         canvas.bind("<Button-1>", lambda event: on_click(event, canvas, points_list[-1]))
 
@@ -82,7 +83,6 @@ def rotate_left():
         canvas.create_image(0, 0, anchor="nw", image=rotated_photo)
         canvas.image = rotated_photo
         canvas.config(width=rotated_image.shape[1], height=rotated_image.shape[0])
-        return rotated_photo
 
 def rotate_right():
     global global_image, canvas
@@ -104,11 +104,11 @@ def rotate_right():
         canvas.create_image(0, 0, anchor="nw", image=rotated_photo)
         canvas.image = rotated_photo
         canvas.config(width=rotated_image.shape[1], height=rotated_image.shape[0])
-        return rotated_photo
 
 
-def threshold_image(img, threshold):
+def threshold_image(threshold):
     global global_image, canvas
+    img=global_image
     if global_image is not None:
         # Sprawdź, czy global_image jest instancją numpy.ndarray
         if not isinstance(img, np.ndarray):
@@ -122,35 +122,9 @@ def threshold_image(img, threshold):
         else:
             gray_image = img
 
-        # Oblicz histogram obrazu
-        histogram = cv2.calcHist([gray_image], [0], None, [256], [0, 256])
-
-        # Normalizacja histogramu
-        histogram = histogram / (gray_image.shape[0] * gray_image.shape[1])
-
-        # Metoda Otsu do automatycznego wyznaczenia progu
-        variance = []
-        for t in range(256):
-            w0 = sum(histogram[0:t])
-            w1 = sum(histogram[t:255])
-            m0 = sum([i * histogram[i] for i in range(0, t)]) / (w0 + 1e-10)
-            m1 = sum([i * histogram[i] for i in range(t, 256)]) / (w1 + 1e-10)
-            variance.append(w0 * w1 * (m0 - m1) ** 2)
-
-        optimal_threshold = np.argmax(variance)
-        print(f"Próg "+str(optimal_threshold))
-
         # Progowanie obrazu na podstawie wybranego progu
         thresholded_image = cv2.threshold(gray_image, threshold, 255, cv2.ADAPTIVE_THRESH_MEAN_C)[1]
-        #global_image=thresholded_image
-        # Progowanie
-        #_, thresholded_image = cv2.threshold(gray_image, average_brightness, 255, cv2.THRESH_BINARY)
-        #_, thresholded_image = cv2.threshold(gray_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Inicjalizuj obraz segmentacji
-        segmented_image = np.zeros_like(thresholded_image)
-
-        edges = cv2.Canny(gray_image, 100, 200)
         global_image=thresholded_image
         # Przekształć obraz na format obsługiwany przez Tkinter i Canvas
         img_pil = Image.fromarray(thresholded_image)
@@ -159,8 +133,6 @@ def threshold_image(img, threshold):
         # Wyświetl obraz na płótnie
         canvas.create_image(0, 0, anchor="nw", image=img_tk)
         canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
-
-        return thresholded_image
 
 def update_binary_image(value):
     global global_image, canvas
@@ -173,8 +145,9 @@ def update_binary_image(value):
     canvas.create_image(0, 0, anchor="nw", image=img_tk)
     canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
 
-def find_and_draw_edges(edges_image):
+def find_and_draw_edges():
     global global_image, canvas
+    edges_image=global_image
 
     # Utwórz jądro dla erozji i dilatacji
     kernel_size=3
@@ -198,45 +171,9 @@ def find_and_draw_edges(edges_image):
     canvas.create_image(0, 0, anchor="nw", image=img_tk)
     canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
 
-    return edges_drawn
-
-'''def sharpen_edges(image):
+def sharpen_edges():
     global global_image  # Użyj zmiennej globalnej, aby uzyskać dostęp do obrazu
-    # Przekształć obraz na odcienie szarości, jeśli nie jest jeszcze w takim formacie
-    if len(image.shape) > 2:
-        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray_image = image
-
-    # Zastosuj operator Sobela w poziomie i pionie
-    sobel_x = cv2.Sobel(gray_image, cv2.CV_64F, 1, 0, ksize=5)
-    sobel_y = cv2.Sobel(gray_image, cv2.CV_64F, 0, 1, ksize=5)
-
-    # Oblicz moduł gradientu
-    gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-
-    gradient_magnitude = cv2.resize(gradient_magnitude, (gray_image.shape[1],gray_image.shape[0]))
-    # Konwertuj gray_image do typu danych gradient_magnitude
-    gray_image = cv2.convertScaleAbs(image)
-    # Konwertuj gradient_magnitude do typu danych gray_image
-    gradient_magnitude = gradient_magnitude.astype(np.uint8)
-
-    # Wyostrz krawędzie poprzez dodanie obrazu oryginalnego do obrazu gradientu
-    sharpened_image = cv2.addWeighted(gray_image, 1.5, gradient_magnitude, -0.5, 0)
-    global_image=sharpened_image
-
-    # Przekształć obraz na format obsługiwany przez Tkinter i Canvas
-    img_pil = Image.fromarray(sharpened_image)
-    img_tk = ImageTk.PhotoImage(img_pil)
-
-    # Wyświetl obraz na płótnie
-    canvas.create_image(0, 0, anchor="nw", image=img_tk)
-    canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
-
-    return sharpened_image'''
-
-def sharpen_edges(image):
-    global global_image  # Użyj zmiennej globalnej, aby uzyskać dostęp do obrazu
+    image=global_image
     # Przekształć obraz na odcienie szarości, jeśli nie jest jeszcze w takim formacie
     if len(image.shape) > 2:
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -266,8 +203,6 @@ def sharpen_edges(image):
     # Wyświetl obraz na płótnie
     canvas.create_image(0, 0, anchor="nw", image=img_tk)
     canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
-
-    return sharpened_image
 def on_click(event, canvas, points):
     # Dodaj punkt do listy
     points.append((event.x, event.y))
@@ -407,8 +342,9 @@ def calculate_mass():
     else:
         print("Nie można znaleźć danych dla ścieżki referencyjnej.")
 
-def filtered(image):
+def filtered():
     global global_image  # Użyj zmiennej globalnej, aby uzyskać dostęp do obrazu
+    image=global_image
     # Przekształć obraz na odcienie szarości, jeśli nie jest jeszcze w takim formacie
     if len(image.shape) > 2:
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -424,8 +360,6 @@ def filtered(image):
     # Wyświetl obraz na płótnie
     canvas.create_image(0, 0, anchor="nw", image=img_tk)
     canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
-
-    return blurred_image
 
 window = ctk.CTk()
 window.title("Narzędzie do analizy")
@@ -469,7 +403,7 @@ edge_button = ctk.CTkButton(left_frame, text="Znajdż krawędzie")
 edge_button.grid(row=6, column=0, columnspan=2, pady=10)
 
 # tekst
-messagebox = ctk.CTkLabel(left_frame, text="Na początku zaznacz 7 punktów na ścieżce kalibracyjnej")
+messagebox = ctk.CTkLabel(left_frame, text="Na początku zaznacz 4 lub 7 punktów na ścieżce kalibracyjnej")
 messagebox.grid(row=7, column=0, columnspan=2, pady=10)
 
 # Dodaj przycisk do rozpoczęcia zaznaczania odległości

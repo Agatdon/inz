@@ -1,18 +1,14 @@
-import tkinter as tk
-from tkinter import *
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-import customtkinter as ctk
-
-from tkinter import filedialog
-from PIL import Image, ImageTk, ImageOps
-from PIL import Image
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 # Zmienna globalna przechowująca obraz
 global_image = None
 global_data = []
+
+
+def import_libraries_from_file(file_path):
+    with open(file_path, 'r') as file:
+        imports_code = file.read()
+
+    exec(imports_code, globals())
 
 def open_image():
     global global_image, canvas, threshold_button, number_slider, global_data
@@ -361,6 +357,7 @@ def filtered():
     canvas.create_image(0, 0, anchor="nw", image=img_tk)
     canvas.image = img_tk  # Ważne, aby zachować referencję, aby uniknąć problemów z zarządzaniem pamięcią
 
+import_libraries_from_file('imports.txt')
 window = ctk.CTk()
 window.title("Narzędzie do analizy")
 ctk.set_appearance_mode("dark")
